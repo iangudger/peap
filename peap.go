@@ -15,7 +15,7 @@
 // Package peap provides the implementation of a pointer-based (array-less)
 // intrusive min-heap. Peap is a portmanteau of pointer heap.
 //
-// Recommended usage: Attach a little bow.
+// Recommended usage: Attach a little bo.
 //
 // This package is based on the paper,"Peaps: Heaps implemented without
 // arrays":
