@@ -32,42 +32,41 @@ import (
 //
 // N.B. When substituted in a template instantiation, Linker doesn't need to
 // be an interface, and in most cases won't be.
-type Linker interface {
-	Left() Element
-	Right() Element
-	SetLeft(Element)
-	SetRight(Element)
+type Linker[T any] interface {
+	Left() T
+	Right() T
+	SetLeft(T)
+	SetRight(T)
 }
 
 // Element the item that is used at the API level.
 //
 // N.B. Like Linker, this is unlikely to be an interface in most cases. If
 // Element is not an interface, it must be a pointer.
-type Element interface {
-	Linker
-	Less(Element) bool
+type Element[T any] interface {
+	comparable
+	Linker[T]
+	Less(T) bool
 }
 
 // Heap implement a pointer-based min-heap.
-//
-// +stateify savable
-type Heap struct {
+type Heap[T Element[T]] struct {
 	size int
-	root Element
+	root T
 }
 
 // Peek returns the next Element to be removed from the Heap.
-func (h *Heap) Peek() Element {
+func (h *Heap[T]) Peek() T {
 	return h.root
 }
 
 // Len returns the number of Elements currently in the Heap.
-func (h *Heap) Len() int {
+func (h *Heap[T]) Len() int {
 	return h.size
 }
 
 // Push adds an Element to the Heap.
-func (h *Heap) Push(e Element) {
+func (h *Heap[T]) Push(e T) {
 	// Increment first so that size points to the new position where we are
 	// going to insert.
 	h.size++
@@ -85,7 +84,7 @@ func (h *Heap) Push(e Element) {
 	h.root = h.insert(h.root, log2(h.size)-1, e)
 }
 
-func swapWithLeft(cur Element) Element {
+func swapWithLeft[T Element[T]](cur T) T {
 	oldRoot := cur
 	newRoot := cur.Left()
 
@@ -98,7 +97,7 @@ func swapWithLeft(cur Element) Element {
 	return newRoot
 }
 
-func swapWithRight(cur Element) Element {
+func swapWithRight[T Element[T]](cur T) T {
 	oldRoot := cur
 	newRoot := cur.Right()
 
@@ -115,11 +114,12 @@ func swapWithRight(cur Element) Element {
 //
 // insert assumes that the Heap's size has already been adjusted to account for
 // the new Element.
-func (h *Heap) insert(cur Element, order int, new Element) Element {
+func (h *Heap[T]) insert(cur T, order int, new T) T {
 	if order < 0 {
 		// Install the new leaf.
-		new.SetLeft(nil)
-		new.SetRight(nil)
+		var zero T
+		new.SetLeft(zero)
+		new.SetRight(zero)
 		return new
 	}
 
@@ -144,9 +144,10 @@ func (h *Heap) insert(cur Element, order int, new Element) Element {
 }
 
 // Pop removes an Element from the Heap.
-func (h *Heap) Pop() Element {
+func (h *Heap[T]) Pop() T {
 	if h.size == 0 {
-		return nil
+		var zero T
+		return zero
 	}
 
 	// Pull of the top Element and replace it with the bottom element.
@@ -159,7 +160,8 @@ func (h *Heap) Pop() Element {
 	h.size--
 
 	// Fix the Heap.
-	if h.root != nil {
+	var zero T
+	if h.root != zero {
 		h.root.SetLeft(removed.Left())
 		h.root.SetRight(removed.Right())
 		h.root = h.fixDown(h.root)
@@ -171,11 +173,12 @@ func (h *Heap) Pop() Element {
 // remove removes the last element from the heap and returns it.
 //
 // remove assumes that the Heap's size is the size before the removal.
-func (h *Heap) remove(cur Element, order int) Element {
+func (h *Heap[T]) remove(cur T, order int) T {
 	if order < 0 {
 		// nil is a sentinel value. It means that this iteration hit the end
 		// of the tree (or the tree was empty).
-		return nil
+		var zero T
+		return zero
 	}
 
 	// val = h.size / (2 ** order)
@@ -184,33 +187,36 @@ func (h *Heap) remove(cur Element, order int) Element {
 	if val&1 == 0 {
 		// val is even, go left.
 		got := h.remove(cur.Left(), order-1)
-		if got == nil {
+		var zero T
+		if got == zero {
 			// h.remove hit the end of the tree. Take the child.
 			got = cur.Left()
-			cur.SetLeft(nil)
+			cur.SetLeft(zero)
 		}
 		return got
 	}
 
 	// val is odd, go right.
 	got := h.remove(cur.Right(), order-1)
-	if got == nil {
+	var zero T
+	if got == zero {
 		// h.remove hit the end of the tree. Take the child.
 		got = cur.Right()
-		cur.SetRight(nil)
+		cur.SetRight(zero)
 	}
 	return got
 }
 
 // fixDown fixes a heap where only the root is potentially in the wrong place.
-func (h *Heap) fixDown(cur Element) Element {
-	if cur.Left() == nil && cur.Right() == nil {
+func (h *Heap[T]) fixDown(cur T) T {
+	var zero T
+	if cur.Left() == zero && cur.Right() == zero {
 		return cur
 	}
 
 	// We have an "almost perfect" binary tree, so we now know that
 	// cur.Left() != nil.
-	if cur.Right() == nil || cur.Left().Less(cur.Right()) {
+	if cur.Right() == zero || cur.Left().Less(cur.Right()) {
 		// We only need to check the left child.
 		if !cur.Left().Less(cur) {
 			// Nothing to fix.
@@ -231,41 +237,41 @@ func (h *Heap) fixDown(cur Element) Element {
 	return newRoot
 }
 
-type dummyElement struct {
-	Entry
+type dummyElement[T Element[T]] struct {
+	Entry[T]
 }
 
-func (e *dummyElement) Less(elem Element) bool {
+func (e *dummyElement[T]) Less(elem T) bool {
 	return true
 }
 
 // String implements fmt.Stringer.String.
-func (h *Heap) String() string {
+func (h *Heap[T]) String() string {
 	// Breadth first search.
 
-	var l []Element
-	var end dummyElement
-	l = append(l, h.root, &end)
+	var l [][]T
+	l = append(l, []T{h.root}, nil)
 
 	var out string
-	for len(l) > 0 {
-		f := l[0]
-		l = l[1:]
+	for len(l[0]) > 0 {
+		f := l[0][0]
+		l[0] = l[0][1:]
 
-		if f == nil {
-			out += "nil "
-			continue
+		out = fmt.Sprintf("%s%v", out, f)
+
+		var zero T
+		if f != zero {
+			last := len(l) - 1
+			l[last] = append(l[last], f.Left(), f.Right())
 		}
-		if f.(*dummyElement) == &end {
+
+		if len(l[0]) == 0 {
+			l = l[1:]
+			l = append(l, nil)
 			out += "\n"
-			if len(l) > 0 {
-				l = append(l, &end)
-			}
-			continue
+		} else {
+			out += " "
 		}
-
-		out = fmt.Sprintf("%s%v ", out, f)
-		l = append(l, f.Left(), f.Right())
 	}
 
 	return out
@@ -274,30 +280,28 @@ func (h *Heap) String() string {
 // Entry is a default implementation of Linker. Users can embed this type in
 // their structs to make them automatically implement most of the methods
 // needed by Heap.
-//
-// +stateify savable
-type Entry struct {
-	left  Element
-	right Element
+type Entry[T Element[T]] struct {
+	left  T
+	right T
 }
 
 // Left returns left child of e.
-func (e *Entry) Left() Element {
+func (e *Entry[T]) Left() T {
 	return e.left
 }
 
 // Right returns right child of e.
-func (e *Entry) Right() Element {
+func (e *Entry[T]) Right() T {
 	return e.right
 }
 
 // SetLeft assigns elem as the left child of e.
-func (e *Entry) SetLeft(elem Element) {
+func (e *Entry[T]) SetLeft(elem T) {
 	e.left = elem
 }
 
 // SetRight assigns elem as the right child of e.
-func (e *Entry) SetRight(elem Element) {
+func (e *Entry[T]) SetRight(elem T) {
 	e.right = elem
 }
 

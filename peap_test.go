@@ -15,12 +15,15 @@
 package peap
 
 import (
+	"container/heap"
 	"fmt"
 	"math"
 	"math/rand"
 	"sort"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestLog2(t *testing.T) {
@@ -46,23 +49,22 @@ func TestLog2(t *testing.T) {
 }
 
 type element struct {
-	Entry
+	Entry[*element]
 	value uint32
 }
 
-func (e *element) Less(elem Element) bool {
-	return e.value < elem.(*element).value
+func (e *element) Less(elem *element) bool {
+	return e.value < elem.value
 }
 
 func (e *element) String() string {
-	return fmt.Sprintf("%03d", e.value)
+	return fmt.Sprintf("%05d", e.value)
 }
 
 func TestInsert(t *testing.T) {
 	min := uint32(math.MaxUint32)
-	rand.Seed(time.Now().Unix())
 
-	var h Heap
+	var h Heap[*element]
 
 	for i := 0; i < 100; i++ {
 		cur := rand.Uint32() % 1000
@@ -72,16 +74,14 @@ func TestInsert(t *testing.T) {
 		h.Push(&element{value: cur})
 	}
 
-	if got := h.root.(*element).value; got != min {
+	if got := h.root.value; got != min {
 		t.Errorf("got root = %d, want = %d", got, min)
 	}
 }
 
 func TestRemove(t *testing.T) {
-	rand.Seed(time.Now().Unix())
-
 	values := make(sort.IntSlice, 0, 100)
-	var h Heap
+	var h Heap[*element]
 	for i := 0; i < 100; i++ {
 		cur := rand.Uint32() % 1000
 		values = append(values, int(cur))
@@ -90,7 +90,7 @@ func TestRemove(t *testing.T) {
 
 	values.Sort()
 	for len(values) > 0 {
-		got := int(h.Pop().(*element).value)
+		got := int(h.Pop().value)
 		if got != values[0] {
 			t.Errorf("got h.Pop() = %d, want = %d", got, values[0])
 		}
@@ -103,4 +103,95 @@ func TestRemove(t *testing.T) {
 	if h.root != nil {
 		t.Errorf("removed all elements, got h.root = %v, want = nil", h.root)
 	}
+}
+
+func TestString(t *testing.T) {
+	var h Heap[*element]
+
+	for i := 0; i < 10; i++ {
+		h.Push(&element{value: uint32(i)})
+	}
+
+	got := h.String()
+	const want = `00000
+00001 00002
+00003 00004 00005 00006
+00007 00008 00009 <nil> <nil> <nil> <nil> <nil>
+<nil> <nil> <nil> <nil> <nil> <nil>
+`
+
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("String() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func BenchmarkHeap(b *testing.B) {
+	for _, size := range []int{5, 10, 100} {
+		b.Run(fmt.Sprint(size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				values := make([]*element, 0, size)
+				for i := 0; i < cap(values); i++ {
+					values = append(values, &element{value: rand.Uint32() % 1000})
+
+				}
+
+				var h Heap[*element]
+				b.StartTimer()
+
+				for _, v := range values {
+					h.Push(v)
+				}
+				for h.Pop() != nil {
+				}
+			}
+		})
+	}
+}
+
+type uint32Heap []uint32
+
+func (h uint32Heap) Len() int           { return len(h) }
+func (h uint32Heap) Less(i, j int) bool { return h[i] < h[j] }
+func (h uint32Heap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+func (h *uint32Heap) Push(x any) {
+	*h = append(*h, x.(uint32))
+}
+
+func (h *uint32Heap) Pop() any {
+	n := len(*h)
+	x := (*h)[n-1]
+	*h = (*h)[0 : n-1]
+	return x
+}
+
+func BenchmarkContainerHeap(b *testing.B) {
+	for _, size := range []int{5, 10, 100} {
+		b.Run(fmt.Sprint(size), func(b *testing.B) {
+			for i := 0; i < b.N; i++ {
+				b.StopTimer()
+				values := make([]uint32, 0, size)
+				for i := 0; i < cap(values); i++ {
+					values = append(values, rand.Uint32()%1000)
+
+				}
+
+				var h uint32Heap
+				heap.Init(&h)
+				b.StartTimer()
+
+				for _, v := range values {
+					heap.Push(&h, v)
+				}
+				for h.Len() > 0 {
+					heap.Pop(&h)
+				}
+			}
+		})
+	}
+}
+
+func init() {
+	rand.Seed(time.Now().Unix())
 }
